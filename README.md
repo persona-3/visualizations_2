@@ -125,28 +125,18 @@ Data Axle's interest scores are based on:
 
 ## Running the Analysis
 
-Data is loaded **only from PostgreSQL** (table `matched_emails`). CSV files are not used.
-
-1. **Table**: `matched_emails` (or pass `--table`)
-2. **Columns**: `email`, `response_json` (JSON/JSONB with the Data Axle match result, e.g. `{"count": 1, "document": {"attributes": {...}}, "match_record_count": 1}`), and optionally `created_at`. Use `--data-col` if your JSON column has a different name.
+To regenerate or update the analysis with fresh data:
 
 ```bash
-# Install dependencies (includes psycopg2-binary for PostgreSQL)
+# Install dependencies
 pip install -r requirements.txt
 
-# Set your PostgreSQL connection URL, then run
-export DATABASE_URL="postgresql://user:password@host:5432/dbname"
+# Run the analysis (generates fresh dashboard every time)
 python3 user_analysis_dashboard.py
-
-# Or pass the URL explicitly
-python3 user_analysis_dashboard.py --postgres "postgresql://user:password@host:5432/dbname" \
-  --table matched_emails --email-col email --data-col response_json
 ```
 
-The script reads only from PostgreSQL `matched_emails`, flattens each row’s `response_json` into the dashboard column structure, then generates the PNGs and `user_dashboard.html`.
-
 **What happens each time you run it:**
-- Loads data only from PostgreSQL `matched_emails` (no CSV)
+- Loads the latest `data_axle_results.csv` data
 - Generates fresh PNG visualizations
 - **Creates a new `user_dashboard.html` with current insights**
 - Updates all metrics, recommendations, and business insights
