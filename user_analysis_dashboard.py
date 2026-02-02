@@ -1,8 +1,19 @@
 #!/usr/bin/env python3
 """
 User Demographics and Behavior Analysis Dashboard
-Analyzes Data Axle enriched user data to provide insights for business teams
+Analyzes Data Axle enriched user data to provide insights for business teams.
+Loads data only from PostgreSQL matched_emails table (email, response_json). No CSV.
 """
+
+import argparse
+import os
+
+# Load .env so DATABASE_URL (and POSTGRES_URI) are available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import pandas as pd
 import numpy as np
@@ -12,9 +23,38 @@ from collections import Counter
 import warnings
 warnings.filterwarnings('ignore')
 
+try:
+    from postgres_loader import load_from_postgres
+except ImportError:
+    load_from_postgres = None
+
 # Set style for better looking plots
 plt.style.use('seaborn-v0_8')
 sns.set_palette("husl")
+
+
+def normalize_numeric_columns(df):
+    """
+    Coerce columns that should be numeric from string/mixed types (e.g. from Postgres JSON).
+    Fixes errors like '<' not supported between instances of 'int' and 'str'.
+    """
+    numeric_cols = [
+        'data.document.attributes.family.member_count',
+        'data.document.attributes.family.adult_count',
+        'data.document.attributes.family.estimated_income',
+        'data.document.attributes.family.estimated_wealth[0]',
+        'data.document.attributes.family.estimated_wealth[1]',
+        'data.document.attributes.lifestyle_segment',
+    ]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    # Interest columns (scores 1-9)
+    for col in df.columns:
+        if 'interests.' in col and col not in ('data.document.attributes.interests.id', 'data.document.attributes.interests.created_at'):
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    return df
+
 
 def load_and_clean_data(filename='data_axle_results.csv'):
     """Load and perform basic cleaning of the data"""
@@ -979,6 +1019,7 @@ def generate_html_dashboard(df):
             <h1>User Demographics & Behavior Analysis</h1>
             <p>Data-Driven Insights for Strategic Business Decisions</p>
             <p style="font-size: 1em; margin-top: 10px; opacity: 0.8;">Based on {total_users:,} Data Axle enriched user records</p>
+            <p style="font-size: 0.9em; margin-top: 6px; opacity: 0.85;">Source: PostgreSQL table <code>matched_emails</code> (email, response_json) | Generated {current_time}</p>
         </header>
 
         <!-- <div class="timestamp">
@@ -1351,13 +1392,53 @@ def generate_html_dashboard(df):
     print("🔄 Dashboard content reflects current data and can be regenerated anytime")
 
 def main():
-    """Main function to run all analyses"""
+    """Main function to run all analyses. Data is loaded only from PostgreSQL matched_emails (no CSV)."""
+    parser = argparse.ArgumentParser(
+        description="User Demographics & Behavior Analysis (Data Axle). Loads only from PostgreSQL matched_emails."
+    )
+    parser.add_argument(
+        "--postgres",
+        metavar="URL",
+        default=os.environ.get("DATABASE_URL"),
+        help="PostgreSQL connection URL (or set DATABASE_URL)",
+    )
+    parser.add_argument(
+        "--table",
+        default="matched_emails",
+        help="PostgreSQL table name (default: matched_emails)",
+    )
+    parser.add_argument(
+        "--email-col",
+        default="email",
+        dest="email_col",
+        help="Email column name (default: email)",
+    )
+    parser.add_argument(
+        "--data-col",
+        default="response_json",
+        dest="data_col",
+        help="JSON/JSONB column name (default: response_json)",
+    )
+    args = parser.parse_args()
+
+    if not args.postgres:
+        raise SystemExit(
+            "PostgreSQL required. Set DATABASE_URL or pass --postgres with your connection URL. CSV is not used."
+        )
+    if load_from_postgres is None:
+        raise SystemExit("PostgreSQL support requires psycopg2. Install with: pip install psycopg2-binary")
+
     print("=== USER DEMOGRAPHICS AND BEHAVIOR ANALYSIS ===")
-    print("Loading and analyzing Data Axle enriched user data...\n")
-    
-    # Load data
-    df = load_and_clean_data()
-    
+    print("Loading Data Axle data from PostgreSQL (matched_emails)...\n")
+
+    df = load_from_postgres(
+        connection_string=args.postgres,
+        table=args.table,
+        email_column=args.email_col,
+        data_column=args.data_col,
+    )
+    df = normalize_numeric_columns(df)
+
     print(f"\nDataset Overview:")
     print(f"- Total records: {len(df):,}")
     print(f"- Total columns: {len(df.columns)}")
